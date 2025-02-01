@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek Chat</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="header">
+        <h1>TSTP DeepSeek UI</h1>
+        <div class="header-buttons">
+            <button onclick="toggleSettings()" class="icon-button" title="Settings">
+                <i class="fas fa-cog"></i>
+            </button>
+            <button onclick="toggleHistory()" class="icon-button" title="History">
+                <i class="fas fa-history"></i>
+            </button>
+        </div>
+    </div>
+    <div class="container">
+        <div id="chat"></div>
+        <div id="input-container">
+            <input type="text" id="message" placeholder="Type your message here..." />
+            <button onclick="sendMessage()" id="sendButton">Send</button>
+            <div class="spinner" id="spinner"></div>
+            <div class="progress-bar">
+                <div class="progress" id="progress"></div>
+            </div>
+        </div>
+    </div>
+    <div id="settings-sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h2>Settings</h2>
+            <button onclick="toggleSettings()" class="close-button">&times;</button>
+        </div>
+        <div class="sidebar-content" style="overflow-y: auto; max-height: calc(100vh - 100px);">
+            <div class="settings-section">
+                <!-- Settings will be dynamically loaded here -->
+            </div>
+            <div class="rules-section">
+                <h3>Response Rules</h3>
+                <textarea id="rules-editor" class="rules-editor"></textarea>
+                <button onclick="saveRules()" class="save-button">Save Rules</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="history-sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <h2>Chat History</h2>
+            <button onclick="toggleHistory()" class="close-button">&times;</button>
+        </div>
+        <div class="sidebar-content">
+            <div class="history-controls">
+                <button onclick="exportHistory()">Export</button>
+                <button onclick="clearHistory()">Clear All</button>
+            </div>
+            <div id="history-list" class="history-list"></div>
+        </div>
+    </div>
+    <script src="/static/js/script.js"></script>
+</body>
+</html>

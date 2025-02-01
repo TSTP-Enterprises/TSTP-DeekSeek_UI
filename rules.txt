@@ -1,0 +1,26 @@
+# Response Formatting Rules
+# One rule per line, comments start with #
+
+# Remove thinking tags
+remove_thinking_tags=true
+
+# Strip extra whitespace
+strip_whitespace=true
+
+# Format code blocks with syntax highlighting
+format_code=true
+
+# Save code snippets automatically
+auto_save_code=true
+
+# Code save location
+code_save_path=./saved_code
+
+# Show AI thinking process
+show_thinking=true
+
+# Maximum response length
+max_response_length=2000
+
+# Response formatting
+use_markdown=true 
