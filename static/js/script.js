@@ -2,33 +2,133 @@ const sendButton = document.getElementById('sendButton');
 const spinner = document.getElementById('spinner');
 const progress = document.getElementById('progress');
 
+// Global variables
+let messageInput = null;
+let currentResponse = '';
+let isProcessing = false;
+let currentMessageDiv = null;
+let progressBar = null;
+let isStreaming = true;
+
+// Add global settings object
+let currentSettings = {
+    show_thinking: false,
+    remove_thinking_tags: true
+};
+
+// Update the sidebar state management
+const SIDEBAR_STATES = {
+    'chats-sidebar': false,
+    'settings-sidebar': false,
+    'history-sidebar': false
+};
+
 // Initialize everything when the DOM is loaded
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+    // Initialize message input
+    messageInput = document.getElementById('message-input');
+    if (messageInput) {
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+    }
+    
+    // Initialize send button
+    const sendButton = document.getElementById('sendButton');
+    if (sendButton) {
+        sendButton.addEventListener('click', sendMessage);
+    }
+    
+    // Initialize progress bar
+    progressBar = document.querySelector('.input-area .progress');
+    
+    // Restore sidebar states from localStorage
+    const savedStates = localStorage.getItem('sidebarStates');
+    if (savedStates) {
+        const states = JSON.parse(savedStates);
+        Object.entries(states).forEach(([id, isActive]) => {
+            const sidebar = document.getElementById(id);
+            if (sidebar) {
+                if (isActive) {
+                    sidebar.classList.add('active');
+                    SIDEBAR_STATES[id] = true;
+                    // Load content for active sidebars
+                    switch(id) {
+                        case 'chats-sidebar':
+                            loadProjects();
+                            loadPreviousChats();
+                            break;
+                        case 'settings-sidebar':
+                            loadSettings();
+                            loadRules();
+                            break;
+                        case 'history-sidebar':
+                            loadHistory();
+                            break;
+                    }
+                } else {
+                    sidebar.classList.remove('active');
+                    SIDEBAR_STATES[id] = false;
+                }
+            }
+        });
+    }
+    
+    // Initialize modals
+    initializeModals();
+    
+    // Load initial settings
     loadSettings();
+    
+    // Initialize projects
+    loadProjects();
+    
+    // Initialize scroll observer
+    setupScrollObserver();
 });
 
 function toggleSidebar(sidebarId) {
     const sidebar = document.getElementById(sidebarId);
-    const otherSidebarId = sidebarId === 'settings-sidebar' ? 'history-sidebar' : 'settings-sidebar';
-    const otherSidebar = document.getElementById(otherSidebarId);
-    
-    // Close other sidebar if open
-    if (otherSidebar.classList.contains('active')) {
-        otherSidebar.classList.remove('active');
-    }
-    
+    if (!sidebar) return;
+
+    // Close other sidebars first
+    Object.keys(SIDEBAR_STATES).forEach(id => {
+        if (id !== sidebarId) {
+            const otherSidebar = document.getElementById(id);
+            if (otherSidebar && otherSidebar.classList.contains('active')) {
+                otherSidebar.classList.remove('active');
+                SIDEBAR_STATES[id] = false;
+            }
+        }
+    });
+
     // Toggle current sidebar
+    const willBeActive = !sidebar.classList.contains('active');
     sidebar.classList.toggle('active');
-}
+    SIDEBAR_STATES[sidebarId] = willBeActive;
 
-function toggleSettings() {
-    toggleSidebar('settings-sidebar');
-    loadRules(); // Load rules when opening settings
-}
+    // Load content if sidebar is being opened
+    if (willBeActive) {
+        switch(sidebarId) {
+            case 'chats-sidebar':
+                loadProjects();
+                loadPreviousChats();
+                break;
+            case 'settings-sidebar':
+                loadSettings();
+                loadRules();
+                break;
+            case 'history-sidebar':
+                loadHistory();
+                break;
+        }
+    }
 
-function toggleHistory() {
-    toggleSidebar('history-sidebar');
-    loadHistory(); // Load history when opening sidebar
+    // Save state to localStorage
+    localStorage.setItem('sidebarStates', JSON.stringify(SIDEBAR_STATES));
 }
 
 function formatMessage(message) {
@@ -52,13 +152,13 @@ function formatMessage(message) {
                     <div class="code-header">
                         <span class="code-language">${currentLanguage}</span>
                         <div class="code-actions">
-                            <button onclick="copyCodeBlock(this)" class="action-button" title="Copy code">
+                            <button onclick="copyCodeBlock(this)" class="code-action-button" title="Copy code">
                                 <i class="fas fa-copy"></i>
                             </button>
-                            <button onclick="saveCodeBlock(this)" class="action-button" title="Save to file">
+                            <button onclick="saveCodeBlock(this)" class="code-action-button" title="Save to file">
                                 <i class="fas fa-save"></i>
                             </button>
-                            <button onclick="runCodeBlock(this)" class="action-button" title="Run code">
+                            <button onclick="runCodeBlock(this)" class="code-action-button" title="Run code">
                                 <i class="fas fa-play"></i>
                             </button>
                         </div>
@@ -337,16 +437,27 @@ function addMessage(message, isBot = false, isPending = false) {
     messageDiv.className = `message ${isBot ? 'bot-message' : 'user-message'}`;
     if (isPending) messageDiv.classList.add('pending');
     
+    // Add sender label
+    const senderLabel = document.createElement('div');
+    senderLabel.className = 'message-sender';
+    senderLabel.textContent = isBot ? 'AI' : 'User';
+    messageDiv.appendChild(senderLabel);
+    
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
     messageDiv.appendChild(contentDiv);
+    
+    // Add message ID for history navigation
+    if (message.id) {
+        messageDiv.dataset.messageId = message.id;
+    }
     
     // Add to chat
     const chat = document.getElementById('chat');
     chat.appendChild(messageDiv);
     
-    // Update content
-    contentDiv.innerHTML = formatMessage(message);
+    // Update content, ensuring no leading blank space
+    contentDiv.innerHTML = formatMessage(message.trim());
     
     // Scroll to bottom
     chat.scrollTop = chat.scrollHeight;
@@ -354,13 +465,116 @@ function addMessage(message, isBot = false, isPending = false) {
     return messageDiv;
 }
 
-function updateMessageContent(messageDiv, content) {
-    const contentDiv = messageDiv.querySelector('.message-content');
-    if (contentDiv) {
-        contentDiv.innerHTML = formatMessage(content);
-        const chat = document.getElementById('chat');
-        chat.scrollTop = chat.scrollHeight;
+function updateMessageContent(messageDiv, content, thinking = null, rawResponse = null, rawThinking = null, mainResponse = null, isThinking = false) {
+    if (!messageDiv) return;
+    
+    // Store all versions in the message div for later updates
+    if (rawResponse !== null) messageDiv.dataset.rawResponse = rawResponse;
+    if (rawThinking !== null) messageDiv.dataset.rawThinking = rawThinking;
+    if (mainResponse !== null) messageDiv.dataset.mainResponse = mainResponse;
+    
+    // Get or create the content div
+    let contentDiv = messageDiv.querySelector('.message-content');
+    if (!contentDiv) {
+        contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        messageDiv.appendChild(contentDiv);
     }
+    
+    // Get or create the thinking section
+    let thinkingSection = messageDiv.querySelector('.thinking-section');
+    if (!thinkingSection) {
+        thinkingSection = document.createElement('div');
+        thinkingSection.className = 'thinking-section';
+        messageDiv.insertBefore(thinkingSection, contentDiv);
+    }
+    
+    // Get or create the loading overlay
+    let loadingOverlay = messageDiv.querySelector('.loading-overlay');
+    if (!loadingOverlay) {
+        loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'loading-overlay';
+        loadingOverlay.innerHTML = '<div class="loading-message">Show Thinking Disabled - Loading Response</div>';
+        messageDiv.appendChild(loadingOverlay);
+    }
+    
+    // Update content based on current settings and state
+    if (thinking !== null) {
+        thinkingSection.dataset.thinking = thinking; // Store the thinking content
+        if (currentSettings.show_thinking) {
+            thinkingSection.textContent = thinking;
+            thinkingSection.classList.add('visible');
+            loadingOverlay.classList.remove('visible');
+            // Auto-scroll when thinking content updates
+            autoScroll();
+        } else {
+            thinkingSection.classList.remove('visible');
+            // Show loading overlay only during thinking phase
+            if (isThinking) {
+                loadingOverlay.classList.add('visible');
+            } else {
+                loadingOverlay.classList.remove('visible');
+            }
+        }
+    }
+    
+    contentDiv.innerHTML = formatMessage(content.trim());
+    
+    // Auto-scroll when content updates
+    autoScroll();
+}
+
+function autoScroll() {
+    const chat = document.getElementById('chat');
+    const lastMessage = chat.lastElementChild;
+    
+    if (lastMessage) {
+        const messageRect = lastMessage.getBoundingClientRect();
+        const chatRect = chat.getBoundingClientRect();
+        
+        // Check if the last message is partially or fully below the visible area
+        if (messageRect.bottom > chatRect.bottom) {
+            // Calculate how much of the message is visible
+            const visibleHeight = chatRect.bottom - messageRect.top;
+            const messageHeight = messageRect.height;
+            const visibleRatio = visibleHeight / messageHeight;
+            
+            // If less than 20% of the message is visible, scroll to show the full message
+            if (visibleRatio < 0.2) {
+                chat.scrollTo({
+                    top: chat.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }
+        }
+    }
+}
+
+// Add scroll observer to handle auto-scrolling
+let isAutoScrollEnabled = true;
+let lastScrollTop = 0;
+
+function setupScrollObserver() {
+    const chat = document.getElementById('chat');
+    if (!chat) return;
+    
+    // Handle manual scroll
+    chat.addEventListener('scroll', () => {
+        const currentScrollTop = chat.scrollTop;
+        const maxScroll = chat.scrollHeight - chat.clientHeight;
+        
+        // If user scrolls up, disable auto-scroll
+        if (currentScrollTop < lastScrollTop) {
+            isAutoScrollEnabled = false;
+        }
+        
+        // If user scrolls to bottom, re-enable auto-scroll
+        if (Math.abs(currentScrollTop - maxScroll) < 10) {
+            isAutoScrollEnabled = true;
+        }
+        
+        lastScrollTop = currentScrollTop;
+    });
 }
 
 function initializeCodeBlocks(container) {
@@ -370,60 +584,109 @@ function initializeCodeBlocks(container) {
 }
 
 async function sendMessage() {
-    const messageInput = document.getElementById('message');
-    const message = messageInput.value;
+    if (!messageInput || isProcessing) return;
+    
+    const message = messageInput.value.trim();
     if (!message) return;
     
-    // Disable input and show loading state
-    sendButton.disabled = true;
-    spinner.style.display = 'block';
+    isProcessing = true;
+    messageInput.value = '';
     updateProgress('thinking');
     
-    // Add user message immediately
-    addMessage(message, false);
-    messageInput.value = '';
+    // Create a new unsaved chat if we don't have one
+    if (!currentChat) {
+        const newChat = await createUnsavedChat();
+        if (!newChat) {
+            showError('Failed to create new chat');
+            isProcessing = false;
+            return;
+        }
+        currentChat = { id: newChat.id, title: newChat.title };
+        await loadPreviousChats();
+    }
+    
+    // Add user message
+    const userMessageDiv = addMessage(message, false);
     
     try {
+        // Create initial message div for AI response
+        currentMessageDiv = addMessage('', true, true);
+        
+        // Create form data with project and chat IDs
+        const data = {
+            message,
+            project_id: currentProject?.id || null,
+            chat_id: currentChat?.id || null
+        };
+        
+        // Make the initial POST request
         const response = await fetch('/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: message })
+            body: JSON.stringify(data)
         });
-
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
-        let currentBotMessage = null;
-        let fullResponse = '';
-        let lastUpdateTime = Date.now();
-        const updateInterval = 50; // Update more frequently (changed from 100ms)
-
+        let buffer = '';
+        let messageId = null;
+        
         while (true) {
-            const { done, value } = await reader.read();
+            const { value, done } = await reader.read();
             if (done) break;
-
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
-
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // Process complete SSE messages
+            const messages = buffer.split('\n\n');
+            buffer = messages.pop() || '';
+            
+            for (const message of messages) {
+                if (message.startsWith('data: ')) {
                     try {
-                        const data = JSON.parse(line.slice(5).trim());
-                        if (data.response) {
-                            fullResponse = data.response;
+                        const data = JSON.parse(message.slice(6));
+                        
+                        if (data.error) {
+                            showError(data.error);
+                            updateProgress('error');
+                            return;
+                        }
+                        
+                        // Store message ID if provided
+                        if (data.message_id) {
+                            messageId = data.message_id;
+                            if (userMessageDiv) userMessageDiv.dataset.messageId = messageId;
+                            if (currentMessageDiv) currentMessageDiv.dataset.messageId = messageId;
+                        }
+                        
+                        // Update current settings if provided
+                        if (data.settings) {
+                            Object.entries(data.settings).forEach(([key, value]) => {
+                                currentSettings[key] = value === 'true';
+                            });
+                        }
+                        
+                        // Update message content with all versions
+                        if (data.response !== undefined) {
+                            updateMessageContent(
+                                currentMessageDiv,
+                                data.response,
+                                data.thinking,
+                                data.raw_response,
+                                data.raw_thinking,
+                                data.main_response,
+                                data.in_thinking
+                            );
                             
-                            // Always update immediately when a code block starts or ends
-                            const shouldUpdateImmediately = 
-                                fullResponse.includes('```') || 
-                                (currentBotMessage && Date.now() - lastUpdateTime >= updateInterval);
-
-                            if (!currentBotMessage) {
-                                currentBotMessage = addMessage(fullResponse, true);
-                            } else if (shouldUpdateImmediately) {
-                                const messageContent = currentBotMessage.querySelector('.message-content');
-                                if (messageContent) {
-                                    messageContent.innerHTML = formatMessage(fullResponse);
-                                    lastUpdateTime = Date.now();
-                                }
+                            // Update progress
+                            if (data.done) {
+                                updateProgress('success');
+                            } else {
+                                updateProgress('streaming');
                             }
                         }
                     } catch (e) {
@@ -432,53 +695,65 @@ async function sendMessage() {
                 }
             }
         }
-
-        // Ensure final state is displayed
-        if (currentBotMessage) {
-            const messageContent = currentBotMessage.querySelector('.message-content');
-            if (messageContent) {
-                messageContent.innerHTML = formatMessage(fullResponse);
-            }
-        }
         
         updateProgress('success');
     } catch (error) {
-        console.error('Error:', error);
-        addMessage('Error: Failed to get response', true);
+        console.error('Error sending message:', error);
+        showError('Failed to send message');
         updateProgress('error');
     } finally {
-        sendButton.disabled = false;
-        spinner.style.display = 'none';
+        isProcessing = false;
     }
 }
 
-// Allow Enter key to send message
-document.getElementById('message').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendMessage();
-    }
-});
-
 function updateProgress(status) {
-    progress.className = 'progress ' + status;
+    if (!progressBar) {
+        progressBar = document.querySelector('.input-area .progress');
+        if (!progressBar) return;
+    }
+    
+    progressBar.className = 'progress ' + status;
     switch(status) {
         case 'thinking':
-            progress.style.width = '50%';
+            progressBar.style.width = '30%';
+            break;
+        case 'streaming':
+            progressBar.style.width = '60%';
+            progressBar.style.transition = 'width 0.3s ease-in-out';
             break;
         case 'error':
-            progress.style.width = '100%';
+            progressBar.style.width = '100%';
+            progressBar.style.background = 'var(--error)';
             break;
         case 'success':
-            progress.style.width = '100%';
+            progressBar.style.width = '100%';
+            progressBar.style.background = 'var(--success)';
             setTimeout(() => {
-                progress.style.width = '0';
-                progress.className = 'progress';
+                progressBar.style.width = '0';
+                progressBar.className = 'progress';
+                progressBar.style.background = '';
             }, 1000);
             break;
         default:
-            progress.style.width = '0';
+            progressBar.style.width = '0';
+            progressBar.style.background = '';
+            progressBar.style.transition = '';
     }
+}
+
+function showError(message) {
+    // Add error message to chat
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'message error-message';
+    errorDiv.textContent = `Error: ${message}`;
+    document.getElementById('chat')?.appendChild(errorDiv);
+}
+
+function showSuccess(message) {
+    const successDiv = document.createElement('div');
+    successDiv.className = 'success-message';
+    successDiv.textContent = message;
+    document.getElementById('chat').appendChild(successDiv);
 }
 
 async function loadSettings() {
@@ -488,9 +763,16 @@ async function loadSettings() {
         
         // Create settings UI
         const settingsSection = document.querySelector('.settings-section');
+        if (!settingsSection) return;
+        
         settingsSection.innerHTML = '';
         
         settings.forEach(setting => {
+            // Update current settings
+            if (setting.name in currentSettings) {
+                currentSettings[setting.name] = setting.value === 'true';
+            }
+            
             const settingDiv = document.createElement('div');
             settingDiv.className = 'setting-item';
             
@@ -529,11 +811,6 @@ async function loadSettings() {
             input.addEventListener('change', () => {
                 const value = input.type === 'checkbox' ? input.checked : input.value;
                 updateSetting(setting.name, value);
-                
-                // Immediately update display for relevant settings
-                if (setting.name === 'show_thinking') {
-                    refreshMessageDisplay();
-                }
             });
             
             settingDiv.appendChild(label);
@@ -571,8 +848,41 @@ async function updateSetting(name, value) {
         });
         
         if (response.ok) {
-            // Refresh all messages in the chat to reflect new settings
-            refreshMessageDisplay();
+            // Update current settings
+            currentSettings[name] = value === 'true' || value === true;
+            
+            // Update all existing messages
+            const chat = document.getElementById('chat');
+            const messages = chat.querySelectorAll('.bot-message');
+            
+            messages.forEach(messageDiv => {
+                const rawResponse = messageDiv.dataset.rawResponse;
+                const rawThinking = messageDiv.dataset.rawThinking;
+                const mainResponse = messageDiv.dataset.mainResponse;
+                
+                if (rawResponse) {
+                    let displayResponse = mainResponse || '';
+                    let displayThinking = '';
+                    
+                    // Handle thinking display based on settings
+                    if (currentSettings.show_thinking && rawThinking) {
+                        if (currentSettings.remove_thinking_tags) {
+                            displayThinking = rawThinking;
+                        } else {
+                            displayThinking = `<think>${rawThinking}</think>`;
+                        }
+                    }
+                    
+                    updateMessageContent(
+                        messageDiv,
+                        displayResponse,
+                        displayThinking,
+                        rawResponse,
+                        rawThinking,
+                        mainResponse
+                    );
+                }
+            });
         }
     } catch (error) {
         console.error('Error updating setting:', error);
@@ -611,7 +921,9 @@ async function saveRules() {
 
 async function loadHistory() {
     try {
-        const response = await fetch('/history');
+        const chatId = currentChat?.id;
+        const url = chatId ? `/history?chat_id=${chatId}` : '/history';
+        const response = await fetch(url);
         const history = await response.json();
         const historyList = document.getElementById('history-list');
         historyList.innerHTML = '';
@@ -637,13 +949,44 @@ async function loadHistory() {
                 historyItem.className = 'history-item';
                 const time = new Date(item.timestamp).toLocaleTimeString();
                 const preview = item.user_message.substring(0, 50) + (item.user_message.length > 50 ? '...' : '');
+                const projectInfo = item.project_name ? `<div class="history-project">${item.project_name} / ${item.chat_title || 'General Chat'}</div>` : '';
                 
                 historyItem.innerHTML = `
                     <div class="history-time">${time}</div>
+                    ${projectInfo}
                     <div class="history-preview">${preview}</div>
                 `;
                 
-                historyItem.onclick = () => loadConversationContext(item.id);
+                historyItem.onclick = async () => {
+                    try {
+                        // Load the conversation context
+                        const messageResponse = await fetch(`/messages/${item.id}`);
+                        const message = await messageResponse.json();
+                        
+                        if (message.chat_id) {
+                            // Update current project and chat
+                            currentProject = { id: message.project_id };
+                            currentChat = { id: message.chat_id };
+                            
+                            // Load the chat and scroll to message
+                            await loadChat(message.chat_id);
+                            
+                            setTimeout(() => {
+                                const messageElement = document.querySelector(`[data-message-id="${item.id}"]`);
+                                if (messageElement) {
+                                    messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    messageElement.classList.add('highlight');
+                                    setTimeout(() => messageElement.classList.remove('highlight'), 2000);
+                                }
+                            }, 100);
+                        }
+                        
+                        toggleHistory(); // Close the history sidebar
+                    } catch (error) {
+                        console.error('Error loading conversation:', error);
+                    }
+                };
+                
                 dateSection.appendChild(historyItem);
             });
             
@@ -654,46 +997,26 @@ async function loadHistory() {
     }
 }
 
-async function loadConversationContext(id) {
+async function loadConversationContext(messageId) {
     try {
-        const response = await fetch(`/conversation/${id}`);
-        const conversation = await response.json();
+        const response = await fetch(`/messages/${messageId}`);
+        const message = await response.json();
         
-        // Get the full conversation context
-        const contextResponse = await fetch('/history');
-        const allConversations = await contextResponse.json();
-        
-        // Find the index of the selected conversation
-        const selectedIndex = allConversations.findIndex(conv => conv.id === id);
-        if (selectedIndex === -1) return;
-        
-        // Get conversations from the start of the current chat session
-        // (conversations until we find a significant time gap, e.g., > 30 minutes)
-        const contextConversations = [];
-        const timeGapThreshold = 30 * 60 * 1000; // 30 minutes in milliseconds
-        
-        for (let i = selectedIndex; i < allConversations.length; i++) {
-            const current = allConversations[i];
-            const next = allConversations[i + 1];
+        if (message.chat_id) {
+            await loadChat(message.chat_id);
             
-            contextConversations.push(current);
-            
-            if (next) {
-                const timeGap = new Date(current.timestamp) - new Date(next.timestamp);
-                if (timeGap > timeGapThreshold) break;
-            }
+            // Scroll to the specific message
+            setTimeout(() => {
+                const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+                if (messageElement) {
+                    messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    messageElement.classList.add('highlight');
+                    setTimeout(() => messageElement.classList.remove('highlight'), 2000);
+                }
+            }, 100);
         }
         
-        // Clear chat and add all messages in context
-        document.getElementById('chat').innerHTML = '';
-        contextConversations.reverse().forEach(conv => {
-            addMessage(conv.user_message, false);
-            addMessage(conv.ai_response, true);
-        });
-        
-        // Close the history sidebar
         toggleHistory();
-        
     } catch (error) {
         console.error('Error loading conversation:', error);
     }
@@ -717,18 +1040,282 @@ async function exportHistory() {
 }
 
 async function clearHistory() {
-    if (confirm('Are you sure you want to clear all chat history? This cannot be undone.')) {
-        try {
-            const response = await fetch('/clear-history', { method: 'POST' });
-            if (response.ok) {
-                document.getElementById('history-list').innerHTML = '';
-                updateProgress('success');
-            } else {
-                updateProgress('error');
+    if (!confirm('Are you sure you want to clear the chat history? This cannot be undone.')) return;
+    
+    try {
+        const chatId = currentChat?.id;
+        const url = chatId ? `/clear-history?chat_id=${chatId}` : '/clear-history';
+        const response = await fetch(url, { method: 'POST' });
+        
+        if (response.ok) {
+            document.getElementById('history-list').innerHTML = '';
+            if (chatId) {
+                document.getElementById('chat').innerHTML = '';
             }
-        } catch (error) {
-            console.error('Error clearing history:', error);
+            updateProgress('success');
+        } else {
             updateProgress('error');
         }
+    } catch (error) {
+        console.error('Error clearing history:', error);
+        updateProgress('error');
     }
 }
+
+// Add these functions for chat management
+function toggleChats() {
+    toggleSidebar('chats-sidebar');
+    loadProjects();
+}
+
+async function loadProjects() {
+    try {
+        const response = await fetch('/projects');
+        const projects = await response.json();
+        const projectsList = document.querySelector('.projects-list');
+        if (!projectsList) return;
+
+        projectsList.innerHTML = '';
+
+        // Get expanded states
+        const expandedProjects = JSON.parse(localStorage.getItem('expandedProjects') || '{}');
+
+        projects.forEach(project => {
+            const isExpanded = expandedProjects[project.id] || false;
+            const projectDiv = createProjectElement(project, isExpanded);
+            projectsList.appendChild(projectDiv);
+        });
+
+        // If we have a current project, ensure it's expanded
+        if (currentProject?.id) {
+            const currentProjectHeader = document.querySelector(`.project-header[data-project-id="${currentProject.id}"]`);
+            if (currentProjectHeader) {
+                const chatList = currentProjectHeader.nextElementSibling;
+                const folderIcon = currentProjectHeader.querySelector('.fa-folder, .fa-folder-open');
+                chatList.classList.add('active');
+                folderIcon.classList.remove('fa-folder');
+                folderIcon.classList.add('fa-folder-open');
+            }
+        }
+    } catch (error) {
+        console.error('Error loading projects:', error);
+    }
+}
+
+function createProjectElement(project, isExpanded = false) {
+    const div = document.createElement('div');
+    div.className = 'project-item';
+    div.innerHTML = `
+        <div class="project-header" data-project-id="${project.id}" onclick="toggleProjectChats(this)">
+            <div class="project-title">
+                <i class="fas fa-folder${isExpanded || project.id === currentProject?.id ? '-open' : ''}"></i>
+                <span>${project.name}</span>
+            </div>
+            <div class="project-actions">
+                <button onclick="event.stopPropagation(); togglePinProject(${project.id}, ${!project.is_pinned})" class="action-button" title="Pin Project">
+                    <i class="fas fa-thumbtack ${project.is_pinned ? 'pinned' : ''}"></i>
+                </button>
+                <button onclick="event.stopPropagation(); showEditProjectModal(${JSON.stringify(project)})" class="action-button" title="Edit Project">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button onclick="event.stopPropagation(); deleteProject(${project.id})" class="action-button" title="Delete Project">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+        <div class="chat-list ${isExpanded || project.id === currentProject?.id ? 'active' : ''}">
+            ${project.chats?.map(chat => createChatElement(chat)).join('') || ''}
+            <div class="chat-item new-chat" onclick="showNewChatModal(${project.id})">
+                <i class="fas fa-plus"></i> New Chat
+            </div>
+        </div>
+    `;
+    return div;
+}
+
+async function createNewProject() {
+    const name = prompt('Enter project name:');
+    if (!name) return;
+    
+    try {
+        const response = await fetch('/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name })
+        });
+        
+        if (response.ok) {
+            loadProjects();
+        }
+    } catch (error) {
+        console.error('Error creating project:', error);
+    }
+}
+
+function toggleProjectChats(header) {
+    const chatList = header.nextElementSibling;
+    const folderIcon = header.querySelector('.fa-folder, .fa-folder-open');
+    const projectId = header.getAttribute('data-project-id');
+    
+    chatList.classList.toggle('active');
+    folderIcon.classList.toggle('fa-folder');
+    folderIcon.classList.toggle('fa-folder-open');
+
+    // Save project expansion state
+    const expandedProjects = JSON.parse(localStorage.getItem('expandedProjects') || '{}');
+    expandedProjects[projectId] = chatList.classList.contains('active');
+    localStorage.setItem('expandedProjects', JSON.stringify(expandedProjects));
+}
+
+// Add other necessary functions for project/chat management
+
+// Server control functions
+function showRestartModal() {
+    const modal = document.getElementById('restart-modal');
+    modal.style.display = 'flex';
+    modal.classList.add('show');
+}
+
+function showShutdownModal() {
+    const modal = document.getElementById('shutdown-modal');
+    modal.style.display = 'flex';
+    modal.classList.add('show');
+}
+
+async function confirmRestart() {
+    try {
+        closeModal('restart-modal');
+        showServerMessage('Restarting server...', 'warning');
+        
+        const response = await fetch('/server/restart', { method: 'POST' });
+        if (response.ok) {
+            showServerMessage('Server is restarting...', 'warning');
+            // Wait for server to come back online
+            await waitForServer();
+            showServerMessage('Server restarted successfully!', 'success');
+            // Reload the page after successful restart
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            showServerMessage('Failed to restart server', 'error');
+        }
+    } catch (error) {
+        console.error('Error restarting server:', error);
+        showServerMessage('Failed to restart server', 'error');
+    }
+}
+
+async function confirmShutdown() {
+    try {
+        closeModal('shutdown-modal');
+        showServerMessage('Shutting down server...', 'warning');
+        
+        const response = await fetch('/server/shutdown', { method: 'POST' });
+        if (response.ok) {
+            showServerMessage('Server is shutting down...', 'warning');
+            // Show final message before server becomes unavailable
+            setTimeout(() => {
+                showServerMessage('Server has been shut down. Please restart manually.', 'success');
+            }, 2000);
+        } else {
+            showServerMessage('Failed to shutdown server', 'error');
+        }
+    } catch (error) {
+        console.error('Error shutting down server:', error);
+        showServerMessage('Failed to shutdown server', 'error');
+    }
+}
+
+async function waitForServer() {
+    const maxAttempts = 30; // 30 seconds timeout
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+        try {
+            const response = await fetch('/health');
+            if (response.ok) {
+                return true;
+            }
+        } catch (error) {
+            // Server not ready yet
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+    }
+    
+    throw new Error('Server failed to restart');
+}
+
+function showServerMessage(message, type) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `server-message ${type}`;
+    messageDiv.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'times-circle'}"></i>
+        ${message}
+    `;
+    document.body.appendChild(messageDiv);
+    
+    setTimeout(() => {
+        messageDiv.classList.add('fade-out');
+        setTimeout(() => messageDiv.remove(), 300);
+    }, 5000);
+}
+
+// Modal handling
+function initializeModals() {
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        const closeBtn = modal.querySelector('.close');
+        if (closeBtn) {
+            closeBtn.onclick = () => modal.style.display = 'none';
+        }
+        
+        window.onclick = (event) => {
+            if (event.target === modal) {
+                modal.style.display = 'none';
+            }
+        };
+    });
+}
+
+// Add CSS styles for the loading overlay
+const style = document.createElement('style');
+style.textContent = `
+    .loading-overlay {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        justify-content: center;
+        align-items: center;
+        border-radius: 12px;
+        z-index: 10;
+    }
+    
+    .loading-overlay.visible {
+        display: flex;
+    }
+    
+    .loading-message {
+        color: #fff;
+        background: rgba(0, 0, 0, 0.8);
+        padding: 10px 20px;
+        border-radius: 4px;
+        font-size: 14px;
+        animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+        0% { opacity: 0.6; }
+        50% { opacity: 1; }
+        100% { opacity: 0.6; }
+    }
+    
+    .message {
+        position: relative;
+    }
+`;
+document.head.appendChild(style);

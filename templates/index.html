@@ -3,30 +3,75 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DeepSeek Chat</title>
+    <title>TSTP DeepSeek Chat UI</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="/static/css/styles.css">
 </head>
 <body>
     <div class="header">
-        <h1>TSTP DeepSeek UI</h1>
-        <div class="header-buttons">
-            <button onclick="toggleSettings()" class="icon-button" title="Settings">
-                <i class="fas fa-cog"></i>
-            </button>
-            <button onclick="toggleHistory()" class="icon-button" title="History">
-                <i class="fas fa-history"></i>
-            </button>
+        <div class="header-content">
+            <h1>TSTP DeepSeek Chat UI</h1>
+            <div class="header-buttons">
+                <button onclick="createNewChat()" class="icon-button" title="New Chat">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <button onclick="toggleChats()" class="icon-button" title="Chats">
+                    <i class="fas fa-comments"></i>
+                </button>
+                <button onclick="toggleSettings()" class="icon-button" title="Settings">
+                    <i class="fas fa-cog"></i>
+                </button>
+                <button onclick="toggleHistory()" class="icon-button" title="History">
+                    <i class="fas fa-history"></i>
+                </button>
+                <button onclick="showRestartModal()" class="icon-button warning-icon" title="Restart Server">
+                    <i class="fas fa-sync"></i>
+                </button>
+                <button onclick="showShutdownModal()" class="icon-button error-icon" title="Shutdown Server">
+                    <i class="fas fa-power-off"></i>
+                </button>
+            </div>
         </div>
     </div>
     <div class="container">
-        <div id="chat"></div>
-        <div id="input-container">
-            <input type="text" id="message" placeholder="Type your message here..." />
-            <button onclick="sendMessage()" id="sendButton">Send</button>
-            <div class="spinner" id="spinner"></div>
-            <div class="progress-bar">
-                <div class="progress" id="progress"></div>
+        <div class="sidebar">
+            <div class="project-list" id="project-list">
+                <!-- Projects will be loaded here -->
+            </div>
+            <div class="sidebar-actions">
+                <button onclick="createNewProject()" class="action-button" title="New project">
+                    <i class="fas fa-plus"></i> New Project
+                </button>
+                <button onclick="loadRules()" class="action-button" title="View rules">
+                    <i class="fas fa-book"></i> Rules
+                </button>
+                <button onclick="exportHistory()" class="action-button" title="Export history">
+                    <i class="fas fa-download"></i> Export
+                </button>
+                <button onclick="clearHistory()" class="action-button" title="Clear history">
+                    <i class="fas fa-trash"></i> Clear
+                </button>
+                <button onclick="restartServer()" class="action-button" title="Restart server">
+                    <i class="fas fa-sync"></i> Restart
+                </button>
+                <button onclick="shutdownServer()" class="action-button" title="Shutdown server">
+                    <i class="fas fa-power-off"></i> Shutdown
+                </button>
+            </div>
+        </div>
+        <div class="main-content">
+            <div id="chat">
+                <!-- Chat messages will be displayed here -->
+            </div>
+            <div class="input-area">
+                <textarea id="message-input" placeholder="Type your message..."></textarea>
+                <button id="sendButton" title="Send Message">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+                <button id="saveToProjectButton" title="Save to Project" class="action-button">
+                    <i class="fas fa-save"></i>
+                </button>
+                <div class="progress"></div>
             </div>
         </div>
     </div>
@@ -37,7 +82,17 @@
         </div>
         <div class="sidebar-content" style="overflow-y: auto; max-height: calc(100vh - 100px);">
             <div class="settings-section">
-                <!-- Settings will be dynamically loaded here -->
+                <div class="server-controls">
+                    <h3>Server Controls</h3>
+                    <div class="control-buttons">
+                        <button onclick="showRestartModal()" class="control-button restart">
+                            <i class="fas fa-sync"></i> Restart Server
+                        </button>
+                        <button onclick="showShutdownModal()" class="control-button shutdown">
+                            <i class="fas fa-power-off"></i> Shutdown Server
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="rules-section">
                 <h3>Response Rules</h3>
@@ -60,6 +115,155 @@
             <div id="history-list" class="history-list"></div>
         </div>
     </div>
+
+    <div id="chats-sidebar" class="sidebar sidebar-left">
+        <div class="sidebar-header">
+            <h2>Chats</h2>
+            <div class="sidebar-actions">
+                <button onclick="toggleChats()" class="close-button">
+                    &times;
+                </button>
+            </div>
+        </div>
+        <div class="sidebar-content">
+            <div class="projects-list">
+                <!-- Projects will be dynamically loaded here -->
+            </div>
+            <div class="previous-chats">
+                <div class="section-header">
+                    <h3>Previous Chats</h3>
+                </div>
+                <div class="chat-list active" id="previous-chats-list">
+                    <!-- Previous chats will be loaded here -->
+                </div>
+            </div>
+            <div class="sidebar-footer">
+                <button onclick="showNewProjectModal()" class="new-project-btn">
+                    <i class="fas fa-plus"></i> New Project
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rules Modal -->
+    <div id="rules-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Rules</h2>
+            <div id="rules-content"></div>
+            <textarea id="rules-editor" style="display: none;"></textarea>
+            <div class="modal-actions">
+                <button id="edit-rules-btn">Edit</button>
+                <button id="save-rules-btn" style="display: none;">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restart Confirmation Modal -->
+    <div id="restart-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Restart Server</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to restart the server? This will close all active connections.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button cancel" onclick="closeModal('restart-modal')">Cancel</button>
+                <button class="modal-button confirm" onclick="confirmRestart()">Restart</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shutdown Modal -->
+    <div id="shutdown-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Shutdown Server</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to shutdown the server? You will need to restart it manually.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button cancel" onclick="closeModal('shutdown-modal')">Cancel</button>
+                <button class="modal-button confirm" onclick="confirmShutdown()">Shutdown</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Modal -->
+    <div id="project-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="project-modal-title">New Project</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="project-name">Project Name</label>
+                    <input type="text" id="project-name" placeholder="Enter project name">
+                </div>
+                <div class="form-group">
+                    <label for="project-description">Description (Optional)</label>
+                    <textarea id="project-description" placeholder="Enter project description"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button cancel" onclick="closeModal('project-modal')">Cancel</button>
+                <button class="modal-button confirm" onclick="submitNewProject()">Create Project</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Modal -->
+    <div id="chat-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="chat-modal-title">New Chat</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="chat-title">Chat Title</label>
+                    <input type="text" id="chat-title" placeholder="Enter chat title">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button cancel" onclick="closeModal('chat-modal')">Cancel</button>
+                <button class="modal-button confirm" onclick="submitNewChat()">Create Chat</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save to Project Modal -->
+    <div id="save-to-project-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Save to Project</h2>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="project-select">Select Project</label>
+                    <select id="project-select" class="project-select">
+                        <option value="">Select a project...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="chat-title-input">Chat Title</label>
+                    <input type="text" id="chat-title-input" placeholder="Enter chat title">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-button cancel" onclick="closeModal('save-to-project-modal')">Cancel</button>
+                <button class="modal-button confirm">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/projects.js"></script>
     <script src="/static/js/script.js"></script>
 </body>
 </html>
