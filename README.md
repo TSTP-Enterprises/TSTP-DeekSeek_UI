@@ -65,11 +65,11 @@ TSTP DeepSeek Chat UI provides a comprehensive chat interface built on Flask. It
 ## Installation
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/TSTP-Enterprises/tstp-nsatt.git
+   git clone https://github.com/TSTP-Enterprises/TSTP-DeekSeek_UI.git
    ```
 2. **Change directory:**
    ```bash
-   cd tstp-nsatt
+   cd tstp-deepseek-chat_ui
    ```
 3. **Install dependencies:**
    ```bash
@@ -113,7 +113,7 @@ This project is licensed under the [MIT License](https://opensource.org/licenses
 ## 🔗 Quick Links
 
 - [🌐 Official Website](https://tstp.xyz/)
-- [💻 GitHub Repository](https://github.com/TSTP-Enterprises/tstp-nsatt)
+- [💻 GitHub Repository](https://github.com/TSTP-Enterprises/TSTP-DeekSeek_UI/)
 - [👥 LinkedIn](https://www.linkedin.com/company/thesolutions-toproblems)
 - [🎥 YouTube Channel](https://www.youtube.com/@yourpststudios)
 - [📱 Facebook Page](https://www.facebook.com/profile.php?id=61557162643039)
